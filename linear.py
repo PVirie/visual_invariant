@@ -22,7 +22,7 @@ class Conceptor:
             self.weights = temp["weights"]
             self.importances = temp["importances"]
 
-    def learn(self, input, expand_depth=1, expand_threshold=1e-4, expand_steps=1000, steps=1000, lr=0.01, verbose=False):
+    def learn(self, input, expand_depth=1, expand_threshold=1e-4, expand_steps=1000, verbose=False):
         print("learn")
 
         self.max_input_channel = max(self.max_input_channel, input.shape[1])
@@ -120,12 +120,15 @@ class Conceptor:
             canvas = self.__internal__backward(hidden, self.weights)
         return canvas
 
-    def project(self, input):
+    def project(self, input, zero_identity=True):
         if len(self.weights) is not 0:
             hidden = self.__internal__forward(input, self.weights)
             input_ = self.__internal__backward(hidden, self.weights, input.shape[1])
         else:
-            input_ = torch.zeros(1, input.shape[1], device=self.device)
+            if zero_identity:
+                input_ = torch.zeros(1, input.shape[1], device=self.device)
+            else:
+                input_ = input
         return input_
 
 

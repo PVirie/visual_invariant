@@ -68,7 +68,7 @@ def sample(x, affines, size=None):
 if __name__ == '__main__':
     print("assert perspective.")
 
-    dtype = torch.float
+    dtype = torch.float32
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     dataset = FashionMNIST(device, batch_size=10, max_per_class=2, seed=100, group_size=1)
@@ -88,7 +88,7 @@ if __name__ == '__main__':
 
             padded_input = np.pad(data.numpy()[:, 0, ...], [[0, 0], [0, display_size[1] - data.shape[2]], [0, display_size[0] - data.shape[3]]], 'constant')
 
-            gen = sample(input, torch.tensor(affines, dtype=torch.float32, device=device), display_size)
+            gen = sample(input, torch.tensor(affines, dtype=dtype, device=device), display_size)
             gen_cpu = gen.cpu().numpy()
             print(gen_cpu.shape)
 
