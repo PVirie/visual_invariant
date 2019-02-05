@@ -88,7 +88,7 @@ class Static_Hierarchy_Classifier:
                 logits += self.layer(input, layer + 1, min_view_param, and_learn, output)
 
             if and_learn:
-                self.model[layer][i].learn(min_perspective, 1)
+                self.model[layer][i].learn(min_perspective, 1, expand_threshold=1e-3)
                 hidden = (self.model[layer][i]) << min_perspective
                 self.semantic[layer][i].learn(hidden, output, num_classes=self.num_classes)
 
@@ -110,7 +110,7 @@ if __name__ == "__main__":
 
     device = torch.device("cuda:0")
 
-    batch_size = 2
+    batch_size = 1
     dataset = FashionMNIST(device, batch_size=batch_size, max_per_class=20, seed=7, group_size=2)
 
     classifier = Static_Hierarchy_Classifier(device, 10)
