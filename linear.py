@@ -35,7 +35,11 @@ class Conceptor:
             prev_loss = 0
             for k in range(expand_steps):
 
-                input_ = self.project(input)
+                if len(self.weights) is not 0:
+                    input_ = self.project(input)
+                else:
+                    input_ = torch.zeros(1, input.shape[1], device=self.device)
+
                 residue = input - input_
 
                 rloss = criterion(input_, input)
@@ -120,15 +124,9 @@ class Conceptor:
             canvas = self.__internal__backward(hidden, self.weights)
         return canvas
 
-    def project(self, input, zero_identity=True):
-        if len(self.weights) is not 0:
-            hidden = self.__internal__forward(input, self.weights)
-            input_ = self.__internal__backward(hidden, self.weights, input.shape[1])
-        else:
-            if zero_identity:
-                input_ = torch.zeros(1, input.shape[1], device=self.device)
-            else:
-                input_ = input
+    def project(self, input):
+        hidden = self.__internal__forward(input, self.weights)
+        input_ = self.__internal__backward(hidden, self.weights, input.shape[1])
         return input_
 
 

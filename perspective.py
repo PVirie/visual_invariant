@@ -50,14 +50,14 @@ def rebase(affines, base):
 
 def sample(x, affines, size=None):
     b = x.shape[0]
-    p = affines.shape[0]
+    p = affines.shape[1]
     c = x.shape[1]
     h = x.shape[2]
     w = x.shape[3]
     out_h = size[1] if size is not None else h
     out_w = size[0] if size is not None else w
 
-    thetas = torch.reshape(affines.unsqueeze(0).expand(b, -1, -1, -1), [-1, 2, 3])
+    thetas = torch.reshape(affines, [-1, 2, 3])
     cross = torch.reshape(x.unsqueeze(1).expand(-1, p, -1, -1, -1), [-1, c, h, w])
 
     grid = torch.nn.functional.affine_grid(thetas, [b * p, c, out_h, out_w])
@@ -71,9 +71,10 @@ if __name__ == '__main__':
     dtype = torch.float32
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    dataset = FashionMNIST(device, batch_size=10, max_per_class=2, seed=100, group_size=1)
+    batch_size = 10
+    dataset = FashionMNIST(device, batch_size=batch_size, max_per_class=2, seed=100, group_size=1)
 
-    affines = get_perspective_kernels([[0, math.pi / 6, 3], [0, 0.3, 5], [0, 0.3, 5]])
+    affines = np.tile(np.expand_dims(get_perspective_kernels([[0, math.pi / 6, 3], [0, 0.3, 5], [0, 0.3, 5]]), 0), [batch_size, 1, 1, 1])
 
     display_size = (56, 56)
 
@@ -94,7 +95,7 @@ if __name__ == '__main__':
 
             img = np.concatenate([
                 1.0 - np.reshape(padded_input, [-1, display_size[0]]),
-                np.reshape(np.transpose(gen_cpu[:, :, 0, ...], [0, 2, 1, 3]), [-1, display_size[0] * affines.shape[0]])
+                np.reshape(np.transpose(gen_cpu[:, :, 0, ...], [0, 2, 1, 3]), [-1, display_size[0] * affines.shape[1]])
             ], axis=1)
 
             cv2.imshow("sample", img)
@@ -102,8 +103,8 @@ if __name__ == '__main__':
 
         print("Upscale...")
 
-        base = affines[0:1]
+        base = affines[:, 0:1, ...]
         parts = get_perspective_kernels(
             [[0, 0, 1], [0, 1.0, 3], [0, 1.0, 3]],
             scale=2)
-        affines = np.reshape(rebase(parts, base), [-1, 2, 3])
+        affines = np.reshape(rebase(parts, base), [batch_size, -1, 2, 3])
