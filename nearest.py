@@ -30,7 +30,7 @@ class Nearest_Neighbor:
     def __internal__forward(self, input, weights):
 
         logits = torch.sum(input * input, dim=1, keepdim=True) - torch.cat([
-            - 2 * torch.matmul(input[:, :A.shape[0]], A) + torch.sum(A * A, dim=0, keepdim=True)
+            - 2 * torch.matmul(input[:, :A.shape[0]], A[:input.shape[1], :]) + torch.sum(A * A, dim=0, keepdim=True)
             for (A, B) in weights
         ], dim=1)
 

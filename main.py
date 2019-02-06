@@ -16,91 +16,105 @@ class Static_Hierarchy_Classifier:
 
         # width, height
         self.sample_size = (9, 9)
-        self.perspective_dim = (9, 9, 9)
+        self.perspective_dim = (1, 9, 9)
+        self.perspective_count = self.perspective_dim[0] * self.perspective_dim[1] * self.perspective_dim[2]
 
         self.part = {}
-        self.model = {}
+        self.models = {}
         self.view_param = {}
-        self.semantic = {}
 
         self.part[0] = get_perspective_kernels([[0, 0, 1], [0, 0, 1], [0, 0, 1]], scale=1)
-        self.model[0] = [Conceptor(device)] * 1
-        self.view_param[0] = get_perspective_kernels([[-math.pi / 12, math.pi / 12, self.perspective_dim[0]], [-0.4, 0.4, self.perspective_dim[1]], [0.4, 0.4, self.perspective_dim[2]]], scale=1)
-        self.semantic[0] = [Nearest_Neighbor(device)] * 1
+        self.view_param[0] = get_perspective_kernels([[0, 0, self.perspective_dim[0]], [-0.2, 0.2, self.perspective_dim[1]], [0.2, 0.2, self.perspective_dim[2]]], scale=1)
 
-        self.part[1] = get_perspective_kernels([[0, 0, 1], [-0.5, 0.5, 3], [-0.5, 0.5, 3]], scale=2)
-        self.model[1] = [Conceptor(device)] * (3 * 3)
-        self.view_param[1] = get_perspective_kernels([[-math.pi / 12, math.pi / 12, self.perspective_dim[0]], [-0.2, 0.2, self.perspective_dim[1]], [0.2, 0.2, self.perspective_dim[2]]], scale=1)
-        self.semantic[1] = [Nearest_Neighbor(device)] * (3 * 3)
+        self.part[1] = get_perspective_kernels([[0, 0, 1], [-0.5, 0.5, 2], [-0.5, 0.5, 2]], scale=2)
+        self.view_param[1] = get_perspective_kernels([[0, 0, self.perspective_dim[0]], [-0.1, 0.1, self.perspective_dim[1]], [0.1, 0.1, self.perspective_dim[2]]], scale=1)
 
         self.part[2] = get_perspective_kernels([[0, 0, 1], [-0.2, 0.2, 3], [-0.2, 0.2, 3]], scale=2)
-        self.model[2] = [Conceptor(device)] * (3 * 3)
-        self.view_param[2] = get_perspective_kernels([[-math.pi / 12, math.pi / 12, self.perspective_dim[0]], [-0.1, 0.1, self.perspective_dim[1]], [0.1, 0.1, self.perspective_dim[2]]], scale=1)
-        self.semantic[2] = [Nearest_Neighbor(device)] * (3 * 3)
+        self.view_param[2] = get_perspective_kernels([[0, 0, self.perspective_dim[0]], [-0.05, 0.05, self.perspective_dim[1]], [0.05, 0.05, self.perspective_dim[2]]], scale=1)
 
-        self.empty = True
+        self.semantic = Nearest_Neighbor(device)
+
+        self.running_base_position = 0
 
     def to_tensor(self, input, dtype=torch.float32):
         return torch.tensor(input, dtype=dtype, device=self.device)
 
     def get_min_index(self, score):
-        self.mid = (self.perspective_dim[0] * self.perspective_dim[1] * self.perspective_dim[2]) // 2
+        self.mid = self.perspective_count // 2
         score[:, self.mid] -= 1e-6
         index = torch.argmin(score, dim=1, keepdim=True)
         return index
 
-    def layer(self, input, layer, base_perspective=None, and_learn=False, output=None):
+    def layer(self, input, layer, id="", base_perspective=None, and_learn=False):
         batches = input.shape[0]
 
-        logits = torch.zeros(input.shape[0], self.num_classes, device=self.device, dtype=torch.float32)
+        bases = []
+        orders = []
 
         if base_perspective is not None:
             part_perspective = np.reshape(rebase(self.part[layer], base_perspective), [-1, 2, 3])  # (batch*num part, 2, 3)
         else:
             part_perspective = np.tile(self.part[layer], (input.shape[0], 1, 1))
 
+        count_parts = self.part[layer].shape[0]
+        count_views = self.view_param[layer].shape[0]
+
         part_perspective = rebase(self.view_param[layer], part_perspective)  # (batch*num part, num perspective, 2, 3)
         perspectives = sample(input, self.to_tensor(np.reshape(part_perspective, [batches, -1, 2, 3])), size=self.sample_size)  # (batch, num part * num perspective, ...)
-        count_views = self.view_param[layer].shape[0]
-        perspectives = torch.reshape(perspectives, [batches, len(self.model[layer]), count_views, -1])
-        for i in range(len(self.model[layer])):
+        perspectives = torch.reshape(perspectives, [batches, count_parts, count_views, -1])
+        for i in range(count_parts):
             _flat = torch.reshape(perspectives[:, i, ...], [batches * count_views, -1])
 
-            if self.empty:
+            _id = id + str(i)
+            if _id not in self.models:
+                self.models[_id] = Conceptor(self.device, max_bases=10)
+
+            if self.models[_id].get_count() == 0:
                 _projected = _flat
             else:
-                _projected = self.model[layer][i].project(_flat)
+                _projected = self.models[_id].project(_flat)
 
             scores = torch.mean(torch.reshape((_flat - _projected)**2, [batches, count_views, -1]), dim=2)
             min_index = self.get_min_index(scores)
             min_indices = torch.unsqueeze(min_index, 2).repeat(1, 1, perspectives.shape[3])
             min_perspective = torch.gather(perspectives[:, i, ...], 1, min_indices)[:, 0, ...]
 
-            if not self.empty:
-                hidden = (self.model[layer][i]) << min_perspective
-                _logit = self.semantic[layer][i].logit(hidden, self.num_classes)
-                logits += _logit
+            if and_learn:
+                self.running_base_position += self.models[_id].learn(min_perspective, 1, start_base_order=self.running_base_position, expand_threshold=1e-3)
+
+            hidden = (self.models[_id]) << min_perspective
+            bases.append(hidden)
+            orders.extend(self.models[_id].get_orders())
 
             if layer < len(self.part) - 1:
                 min_view_param = self.view_param[layer][np.squeeze(min_index.cpu().numpy()), ...]
                 if len(min_view_param.shape) < 3:
                     min_view_param = np.expand_dims(min_view_param, 0)
-                logits += self.layer(input, layer + 1, min_view_param, and_learn, output)
+                _b, _o = self.layer(input, layer + 1, _id, min_view_param, and_learn)
+                bases += _b
+                orders += _o
 
-            if and_learn:
-                self.model[layer][i].learn(min_perspective, 1, expand_threshold=1e-3)
-                hidden = (self.model[layer][i]) << min_perspective
-                self.semantic[layer][i].learn(hidden, output, num_classes=self.num_classes)
+        return bases, orders
 
-        return logits
+    def reorder_bases(self, bases, orders):
+        _b = torch.cat(bases, dim=1)
+        return _b[:, orders]
 
-    def classify(self, input, and_learn=False, output=None):
+    def classify(self, input, output=None):
 
-        logits = self.layer(input, 0, None, and_learn, output)
-        prediction = torch.argmax(logits, dim=1)
+        and_learn = output is not None
+
+        mark = self.running_base_position
+        bases, orders = self.layer(input, 0, "", None, and_learn=and_learn)
+        logits = self.reorder_bases(bases, orders)
+
+        if mark == 0:
+            prediction = torch.randint(10, (input.shape[0], ), dtype=torch.int64, device=device)
+        else:
+            prediction = self.semantic << logits[:, 0:mark]
 
         if and_learn:
-            self.empty = False
+            self.semantic.learn(logits, output, num_classes=self.num_classes)
 
         return prediction
 
@@ -111,7 +125,7 @@ if __name__ == "__main__":
     device = torch.device("cuda:0")
 
     batch_size = 1
-    dataset = FashionMNIST(device, batch_size=batch_size, max_per_class=20, seed=7, group_size=2)
+    dataset = FashionMNIST(device, batch_size=batch_size, max_per_class=20, seed=0, group_size=2)
 
     classifier = Static_Hierarchy_Classifier(device, 10)
 
@@ -124,7 +138,7 @@ if __name__ == "__main__":
 
         # online test
         current_bits = 0
-        prediction = classifier.classify(input, and_learn=True, output=output).cpu()
+        prediction = classifier.classify(input, output=output).cpu()
         count_correct = np.sum(prediction.numpy() == label.numpy())
         percent_correct = 0.99 * percent_correct + 0.01 * count_correct * 100 / batch_size
         print("Truth: ", dataset.readout(label))

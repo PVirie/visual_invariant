@@ -4,25 +4,29 @@ import os
 
 class Conceptor:
 
-    def __init__(self, device, file_path=None):
+    def __init__(self, device, max_bases=-1, file_path=None):
         print("init")
         self.device = device
+        self.max_bases = max_bases
         self.weights = []
         self.importances = []
         self.file_path = file_path
         self.max_input_channel = 0
+        self.count_bases = 0
+        self.orders = []
 
     def save(self):
         if self.file_path:
-            torch.save({"weights": self.weights, "importances": self.importances}, self.file_path)
+            torch.save({"weights": self.weights, "importances": self.importances, "orders": self.orders}, self.file_path)
 
     def load(self):
         if self.file_path:
             temp = torch.load(self.file_path)
             self.weights = temp["weights"]
             self.importances = temp["importances"]
+            self.orders = temp["orders"]
 
-    def learn(self, input, expand_depth=1, expand_threshold=1e-4, expand_steps=1000, verbose=False):
+    def learn(self, input, expand_depth=1, expand_threshold=1e-4, expand_steps=1000, start_base_order=None, verbose=False):
         print("learn")
 
         self.max_input_channel = max(self.max_input_channel, input.shape[1])
@@ -31,9 +35,18 @@ class Conceptor:
 
         with torch.no_grad():
 
-            prev_size = len(self.weights)
+            if start_base_order is not None:
+                current_order = start_base_order
+            else:
+                current_order = self.count_bases
+
+            mark = self.count_bases
             prev_loss = 0
             for k in range(expand_steps):
+
+                if self.max_bases > 0 and expand_depth + self.count_bases > self.max_bases:
+                    print("Stop expansion at", self.count_bases, "bases, before exceeding the maximum bases.")
+                    break
 
                 if len(self.weights) is not 0:
                     input_ = self.project(input)
@@ -44,10 +57,10 @@ class Conceptor:
 
                 rloss = criterion(input_, input)
                 if rloss.item() < expand_threshold:
-                    print("Stop expansion after", (len(self.weights) - prev_size) * expand_depth, "steps, small reconstruction loss.", rloss.item())
+                    print("Stop expansion after", self.count_bases - mark, "bases, small reconstruction loss.", rloss.item())
                     break
                 if abs(rloss.item() - prev_loss) < expand_threshold:
-                    print("Stop expansion after", (len(self.weights) - prev_size) * expand_depth, "steps, small delta error.", rloss.item(), prev_loss)
+                    print("Stop expansion after", self.count_bases - mark, "bases, small delta error.", rloss.item(), prev_loss)
                     break
 
                 # expand
@@ -70,7 +83,13 @@ class Conceptor:
                 # merge
                 self.weights.append(A)
                 self.importances.append(M)
+                self.count_bases += expand_depth
+                for i in range(expand_depth):
+                    self.orders.append(current_order)
+                    current_order += 1
                 prev_loss = rloss.item()
+
+        return self.count_bases - mark
 
     def __internal__scale(self, input, importances):
         res = torch.div(input, torch.reshape(torch.cat(importances, dim=0), [1, -1]))
@@ -128,6 +147,12 @@ class Conceptor:
         hidden = self.__internal__forward(input, self.weights)
         input_ = self.__internal__backward(hidden, self.weights, input.shape[1])
         return input_
+
+    def get_orders(self):
+        return self.orders
+
+    def get_count(self):
+        return self.count_bases
 
 
 if __name__ == '__main__':
