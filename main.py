@@ -16,7 +16,7 @@ class Static_Hierarchy_Classifier:
 
         # width, height
         self.sample_size = (9, 9)
-        self.perspective_dim = (1, 9, 9)
+        self.perspective_dim = (1, 19, 19)
         self.perspective_count = self.perspective_dim[0] * self.perspective_dim[1] * self.perspective_dim[2]
 
         self.part = {}
@@ -125,7 +125,7 @@ if __name__ == "__main__":
     device = torch.device("cuda:0")
 
     batch_size = 1
-    dataset = FashionMNIST(device, batch_size=batch_size, max_per_class=20, seed=0, group_size=2)
+    dataset = FashionMNIST(device, batch_size=batch_size, max_per_class=60, seed=10, group_size=2)
 
     classifier = Static_Hierarchy_Classifier(device, 10)
 

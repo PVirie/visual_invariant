@@ -72,7 +72,7 @@ if __name__ == '__main__':
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     batch_size = 10
-    dataset = FashionMNIST(device, batch_size=batch_size, max_per_class=2, seed=100, group_size=1)
+    dataset = FashionMNIST(device, batch_size=batch_size, max_per_class=2, seed=10, group_size=1)
 
     affines = np.tile(np.expand_dims(get_perspective_kernels([[0, math.pi / 6, 3], [0, 0.3, 5], [0, 0.3, 5]]), 0), [batch_size, 1, 1, 1])
 
